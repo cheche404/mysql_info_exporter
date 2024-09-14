@@ -1,0 +1,7 @@
+databases:
+  - name: "Localhost-MySQL"
+    dsn: "root:cheche0058!@tcp(172.31.0.7:3306)/"
+    origin_prometheus: "本地"
+  - name: "cheche"
+    dsn: "root:cheche0058!@tcp(172.31.0.7:3306)/"
+    origin_prometheus: "远程"

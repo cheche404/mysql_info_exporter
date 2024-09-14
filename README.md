@@ -55,6 +55,3 @@ EXPOSE 18080
 # 设置容器启动时的默认命令
 CMD ["/app/mysql_info_exporter"]
 ```
-
-
-# mysql_info_exporter
