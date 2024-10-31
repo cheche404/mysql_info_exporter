@@ -42,6 +42,13 @@ var (
 		},
 		[]string{"cloud_name", "user", "db", "origin_prometheus"},
 	)
+	connCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mysql_conn_count",
+			Help: "Number of connections grouped by user and database.",
+		},
+		[]string{"cloud_name", "user", "db", "origin_prometheus"},
+	)
 )
 
 func init() {
@@ -49,6 +56,7 @@ func init() {
 	prometheus.MustRegister(indexSize)
 	prometheus.MustRegister(tableRows)
 	prometheus.MustRegister(processListCount)
+	prometheus.MustRegister(connCount)
 }
 
 // Config structure for YAML file
@@ -71,6 +79,43 @@ func readConfig(filename string) (Config, error) {
 		return config, err
 	}
 	return config, nil
+}
+
+func collectConnCount(db *sql.DB, cloudName string, originPrometheus string) {
+	rows, err := db.Query(`
+		SELECT db, user, count(*) 
+		FROM information_schema.processlist 
+		GROUP BY db, user 
+		ORDER BY 3 DESC 
+		LIMIT 20
+	`)
+	if err != nil {
+		log.Printf("database %s: Error executing connection count query: %v", cloudName, err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var dbName, userName sql.NullString
+		var count int
+
+		if err := rows.Scan(&dbName, &userName, &count); err != nil {
+			log.Printf("database %s: Error scanning connection count row: %v", cloudName, err)
+			continue
+		}
+
+		db := "UNKNOWN_DB"
+		if dbName.Valid {
+			db = dbName.String
+		}
+
+		user := "UNKNOWN_USER"
+		if userName.Valid {
+			user = userName.String
+		}
+
+		connCount.WithLabelValues(cloudName, user, db, originPrometheus).Set(float64(count))
+	}
 }
 
 func collectMetrics(db *sql.DB, cloudName string, originPrometheus string) {
@@ -169,7 +214,7 @@ func main() {
 			DSN              string `yaml:"dsn"`
 			OriginPrometheus string `yaml:"origin_prometheus"`
 		}) {
-			dsn := dbConfig.DSN + "?timeout=30s" // 在 DSN 中添加超时时间参数
+			dsn := dbConfig.DSN + "?timeout=30s"
 			db, err := sql.Open("mysql", dsn)
 			if err != nil {
 				log.Fatalf("Error opening database %s: %v", dbConfig.Name, err)
@@ -179,6 +224,15 @@ func main() {
 			cloudName := dbConfig.Name
 			originPrometheus := dbConfig.OriginPrometheus
 
+			// Start connection count collection in a separate goroutine
+			go func() {
+				for {
+					collectConnCount(db, cloudName, originPrometheus)
+					time.Sleep(5 * time.Minute)
+				}
+			}()
+
+			// Original metrics collection
 			for {
 				collectMetrics(db, cloudName, originPrometheus)
 				// Adjust the sleep interval as needed
