@@ -57,6 +57,11 @@ func init() {
 	prometheus.MustRegister(tableRows)
 	prometheus.MustRegister(processListCount)
 	prometheus.MustRegister(connCount)
+
+	// 移除默认的 Prometheus 指标
+	prometheus.Unregister(prometheus.NewGoCollector())        // 去除Go的运行时指标
+	prometheus.Unregister(prometheus.NewBuildInfoCollector()) // 去除构建信息相关的指标
+	prometheus.Unregister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 }
 
 // Config structure for YAML file
